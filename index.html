@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Órion — assistente de voz</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#08111F">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600&family=Manrope:wght@400;500;600&display=swap">
+<style>
+  /* ===== Tokens de cor (claro por padrão, escuro abaixo) ===== */
+  :root {
+    --bg: #EEF2F7; --panel: #FFFFFF; --line: #D3DCE8;
+    --gold: #B9781A; --ice: #1F7BB8; --text: #0E1A2B; --muted: #5A6B82;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #08111F; --panel: #0F1C2E; --line: #1E3048;
+      --gold: #F2B84B; --ice: #8FD3FF; --text: #E6EDF5; --muted: #7C8DA6;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #08111F; --panel: #0F1C2E; --line: #1E3048;
+    --gold: #F2B84B; --ice: #8FD3FF; --text: #E6EDF5; --muted: #7C8DA6;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html { height: 100%; scroll-padding-top: env(safe-area-inset-top, 0px); }
+  body {
+    height: 100%; margin: 0;
+    background: var(--bg); color: var(--text);
+    font-family: 'Manrope', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  }
+
+  .app {
+    height: 100%; max-width: 640px; margin: 0 auto;
+    display: grid; grid-template-rows: auto 1fr auto;
+    padding: 16px 20px;
+  }
+
+  /* ===== Topo ===== */
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .marca { font-family: 'Chakra Petch', 'Segoe UI', sans-serif; font-size: 1.4rem; font-weight: 600; letter-spacing: .02em; }
+  details { position: relative; }
+  summary {
+    list-style: none; cursor: pointer; color: var(--muted);
+    padding: 8px 12px; border: 1px solid var(--line); border-radius: 999px; font-size: .9rem;
+  }
+  summary::-webkit-details-marker { display: none; }
+  .config {
+    position: absolute; right: 0; top: calc(100% + 8px); z-index: 2;
+    width: min(300px, 85vw); padding: 14px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    display: grid; gap: 10px;
+  }
+  .config label { font-size: .85rem; color: var(--muted); }
+  select, input[type="text"] {
+    width: 100%; font: inherit; color: var(--text);
+    background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+  }
+
+  /* ===== Centro: orbe + conversa ===== */
+  main { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; min-height: 0; }
+  canvas { width: min(72vw, 320px); aspect-ratio: 1; }
+  .estado { font-family: 'Chakra Petch', sans-serif; color: var(--muted); font-size: 1rem; min-height: 1.4em; }
+  .conversa { width: 100%; display: grid; gap: 10px; max-height: 30vh; overflow-y: auto; }
+  .fala { line-height: 1.5; max-width: 70ch; }
+  .fala b { font-weight: 600; color: var(--muted); margin-right: 6px; }
+  .fala.orion b { color: var(--gold); }
+  .aviso { color: var(--ice); font-size: .9rem; text-align: center; min-height: 1.2em; }
+
+  /* ===== Rodapé: digitação + microfone ===== */
+  footer { display: flex; gap: 10px; align-items: center; padding-top: 12px; }
+  footer input { flex: 1; }
+  button { font: inherit; cursor: pointer; }
+  .enviar {
+    border: 1px solid var(--line); background: var(--panel); color: var(--text);
+    border-radius: 10px; padding: 10px 14px;
+  }
+  .mic {
+    width: 58px; height: 58px; flex-shrink: 0; border-radius: 50%;
+    border: 2px solid var(--gold); background: transparent; color: var(--gold);
+    display: grid; place-items: center; transition: background .2s, color .2s, border-color .2s;
+  }
+  .mic.ativo { background: var(--ice); border-color: var(--ice); color: var(--bg); }
+  button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--ice); outline-offset: 2px;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="marca">Órion</div>
+    <details>
+      <summary>Voz</summary>
+      <div class="config">
+        <label for="voz">Escolha a voz do Órion</label>
+        <select id="voz"></select>
+        <button class="enviar" id="testar">Testar voz</button>
+      </div>
+    </details>
+  </header>
+
+  <main>
+    <canvas id="orb" aria-hidden="true"></canvas>
+    <div class="estado" id="estado">Toque no microfone ou digite</div>
+    <div class="conversa" id="conversa" aria-live="polite"></div>
+    <div class="aviso" id="aviso"></div>
+  </main>
+
+  <footer>
+    <input type="text" id="entrada" placeholder="Pergunte as horas, peça uma piada…" autocomplete="off">
+    <button class="enviar" id="btnEnviar">Enviar</button>
+    <button class="mic" id="btnMic" aria-label="Falar com o Órion">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>
+      </svg>
+    </button>
+  </footer>
+</div>
+
+<script>
+/* =========================================================
+   ÓRION V0 — 3 partes, igual um assistente de verdade:
+   1) OUVIDO  -> reconhecimento de voz do navegador (V2: Whisper)
+   2) CÉREBRO -> função pensar() com regras simples (V1: Ollama)
+   3) BOCA    -> síntese de voz do navegador (V2: Piper)
+   ========================================================= */
+
+const $ = (id) => document.getElementById(id);
+let estado = 'idle'; // idle | ouvindo | pensando | falando
+
+const textos = {
+  idle: 'Toque no microfone ou digite',
+  ouvindo: 'Ouvindo…',
+  pensando: 'Pensando…',
+  falando: 'Falando…'
+};
+
+function mudarEstado(novo) {
+  estado = novo;
+  $('estado').textContent = textos[novo];
+  $('btnMic').classList.toggle('ativo', novo === 'ouvindo');
+}
+
+function avisar(msg) { $('aviso').textContent = msg || ''; }
+
+function mostrar(quem, texto) {
+  const div = document.createElement('div');
+  div.className = 'fala' + (quem === 'Órion' ? ' orion' : '');
+  div.innerHTML = `<b></b><span></span>`;
+  div.querySelector('b').textContent = quem;
+  div.querySelector('span').textContent = texto;
+  const conversa = $('conversa');
+  conversa.appendChild(div);
+  // Guarda só as últimas 6 falas pra tela não lotar
+  while (conversa.children.length > 6) conversa.firstChild.remove();
+  conversa.scrollTop = conversa.scrollHeight;
+}
+
+/* ================= ORBE ANIMADO ================= */
+const canvas = $('orb');
+const ctx = canvas.getContext('2d');
+const reduzMovimento = matchMedia('(prefers-reduced-motion: reduce)').matches;
+let energia = 0; // sobe quando o Órion pronuncia uma palavra
+
+function ajustarCanvas() {
+  const dpr = window.devicePixelRatio || 1;
+  const r = canvas.getBoundingClientRect();
+  canvas.width = r.width * dpr;
+  canvas.height = r.height * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+addEventListener('resize', ajustarCanvas);
+ajustarCanvas();
+
+const cor = (nome) => getComputedStyle(document.documentElement).getPropertyValue(nome).trim();
+
+function desenhar(t) {
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  const cx = w / 2, cy = h / 2, R = Math.min(w, h) * 0.32;
+  const c = estado === 'ouvindo' ? cor('--ice') : cor('--gold');
+  const tempo = reduzMovimento ? 0 : t / 1000;
+  energia *= 0.92;
+
+  ctx.clearRect(0, 0, w, h);
+
+  // Núcleo: "respira" parado, pulsa ouvindo e falando
+  let escala = 0.55;
+  if (estado === 'idle') escala += Math.sin(tempo * 1.5) * 0.04;
+  if (estado === 'ouvindo') escala += Math.sin(tempo * 4) * 0.06;
+  if (estado === 'falando') escala += energia * 0.18 + Math.abs(Math.sin(tempo * 9)) * 0.05;
+  const raio = R * escala;
+
+  const brilho = ctx.createRadialGradient(cx, cy, 0, cx, cy, raio * 1.7);
+  brilho.addColorStop(0, c);
+  brilho.addColorStop(0.45, c + '55');
+  brilho.addColorStop(1, c + '00');
+  ctx.fillStyle = brilho;
+  ctx.beginPath(); ctx.arc(cx, cy, raio * 1.7, 0, Math.PI * 2); ctx.fill();
+
+  // Anéis: giram devagar, e rápido/fragmentados quando está pensando
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = c;
+  for (let i = 0; i < 3; i++) {
+    const r = R * (0.9 + i * 0.22);
+    const vel = (estado === 'pensando' ? 2.2 : 0.35) * (i % 2 ? -1 : 1);
+    const segs = estado === 'pensando' ? 6 : 3;
+    const passo = (Math.PI * 2) / segs;
+    ctx.globalAlpha = 0.75 - i * 0.2;
+    for (let s = 0; s < segs; s++) {
+      const a = tempo * vel + i + s * passo;
+      ctx.beginPath(); ctx.arc(cx, cy, r, a, a + passo * 0.55); ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1;
+  requestAnimationFrame(desenhar);
+}
+requestAnimationFrame(desenhar);
+
+/* ================= BOCA (texto -> voz) ================= */
+const temVoz = 'speechSynthesis' in window;
+let vozes = [];
+
+function carregarVozes() {
+  if (!temVoz) return;
+  vozes = speechSynthesis.getVoices().filter(v => v.lang.toLowerCase().startsWith('pt'));
+  const sel = $('voz');
+  sel.innerHTML = '';
+  if (!vozes.length) {
+    sel.innerHTML = '<option value="">Voz padrão do aparelho</option>';
+    return;
+  }
+  vozes.forEach((v, i) => {
+    const o = document.createElement('option');
+    o.value = i; o.textContent = `${v.name} (${v.lang})`;
+    sel.appendChild(o);
+  });
+  // Tenta reusar a voz escolhida antes; senão prefere pt-BR
+  let salva = null;
+  try { salva = localStorage.getItem('orion-voz'); } catch (e) {}
+  let idx = vozes.findIndex(v => v.name === salva);
+  if (idx < 0) idx = Math.max(0, vozes.findIndex(v => v.lang === 'pt-BR'));
+  sel.value = idx;
+}
+if (temVoz) { speechSynthesis.onvoiceschanged = carregarVozes; carregarVozes(); }
+
+$('voz').addEventListener('change', () => {
+  const v = vozes[$('voz').value];
+  try { if (v) localStorage.setItem('orion-voz', v.name); } catch (e) {}
+});
+
+function falar(texto) {
+  return new Promise((resolve) => {
+    if (!temVoz) { mudarEstado('idle'); return resolve(); }
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(texto);
+    u.lang = 'pt-BR';
+    const v = vozes[$('voz').value];
+    if (v) u.voice = v;
+    u.rate = 1.0;
+    u.pitch = 0.85; // um pouco mais grave = mais "assistente"
+    u.onstart = () => mudarEstado('falando');
+    u.onboundary = () => { energia = 1; }; // pulso a cada palavra
+    u.onend = u.onerror = () => { mudarEstado('idle'); resolve(); };
+    speechSynthesis.speak(u);
+  });
+}
+
+$('testar').addEventListener('click', () => falar('Olá, Bonifácio. Sistemas online.'));
+
+/* ================= CÉREBRO (regras simples na V0) ================= */
+const sorteia = (lista) => lista[Math.floor(Math.random() * lista.length)];
+
+const piadas = [
+  'Por que o programador foi ao médico? Porque estava cheio de bugs.',
+  'Existem 10 tipos de pessoas: as que entendem binário e as que não entendem.',
+  'Na minha máquina funciona. Então vamos mandar a sua máquina pro cliente.'
+];
+
+const versiculos = [
+  'Tudo posso naquele que me fortalece. Filipenses 4:13.',
+  'O Senhor é o meu pastor, nada me faltará. Salmos 23:1.',
+  'Lâmpada para os meus pés é a tua palavra, e luz para o meu caminho. Salmos 119:105.'
+];
+
+// Tira acentos e pontuação pra comparar mais fácil
+function normalizar(t) {
+  return t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[?!.,;]/g, ' ').trim();
+}
+
+function saudacao() {
+  const h = new Date().getHours();
+  const parte = h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite';
+  return `${parte}! Em que posso ajudar?`;
+}
+
+function calcular(t) {
+  const m = t.match(/(-?\d+(?:\s\d+)?)\s*(mais|\+|menos|-|vezes|x|\*|dividido por|\/)\s*(-?\d+)/);
+  if (!m) return null;
+  const a = Number(m[1].replace(/\s/g, '')), b = Number(m[3]);
+  const op = m[2];
+  let r;
+  if (op === 'mais' || op === '+') r = a + b;
+  else if (op === 'menos' || op === '-') r = a - b;
+  else if (op === 'vezes' || op === 'x' || op === '*') r = a * b;
+  else {
+    if (b === 0) return 'Não dá pra dividir por zero.';
+    r = a / b;
+  }
+  return `Dá ${r.toLocaleString('pt-BR', { maximumFractionDigits: 4 })}.`;
+}
+
+// 🧠 Esta é a função que vamos trocar pelo Ollama na V1
+async function pensar(texto) {
+  await new Promise(r => setTimeout(r, 450)); // simula o tempo de pensar
+  const t = normalizar(texto);
+  const agora = new Date();
+
+  const conta = calcular(t);
+  if (conta) return conta;
+  if (/\bhoras?\b/.test(t))
+    return `Agora são ${agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}.`;
+  if (/que dia|\bdata\b|hoje e/.test(t))
+    return `Hoje é ${agora.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}.`;
+  if (/quem e voce|seu nome|o que voce e/.test(t))
+    return 'Eu sou o Órion, seu assistente de voz. Por enquanto rodo só no navegador. Na próxima versão, meu cérebro vai ser o Ollama, no seu computador.';
+  if (/^(oi|ola|e ai|eai|salve|bom dia|boa tarde|boa noite)\b/.test(t)) return saudacao();
+  if (/piada/.test(t)) return sorteia(piadas);
+  if (/versiculo|biblia/.test(t)) return sorteia(versiculos);
+  if (/obrigad|valeu/.test(t)) return 'Sempre às ordens.';
+  return 'Ainda não sei responder isso. Na versão 1 eu ganho um cérebro de verdade com o Ollama.';
+}
+
+/* ================= FLUXO PRINCIPAL ================= */
+async function processar(texto) {
+  texto = texto.trim();
+  if (!texto) return;
+  avisar('');
+  mostrar('Você', texto);
+  mudarEstado('pensando');
+  const resposta = await pensar(texto);
+  mostrar('Órion', resposta);
+  await falar(resposta);
+}
+
+/* ================= OUVIDO (voz -> texto) ================= */
+const Reconhecedor = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null;
+let ouvido = '';
+
+if (Reconhecedor) {
+  rec = new Reconhecedor();
+  rec.lang = 'pt-BR';
+  rec.interimResults = true; // mostra o texto enquanto você fala
+  rec.continuous = false;    // para sozinho quando você para de falar
+
+  rec.onstart = () => { ouvido = ''; mudarEstado('ouvindo'); avisar(''); };
+  rec.onresult = (e) => {
+    ouvido = Array.from(e.results).map(r => r[0].transcript).join('');
+    $('entrada').value = ouvido;
+  };
+  rec.onerror = (e) => {
+    const erros = {
+      'not-allowed': 'Microfone bloqueado. Libere o microfone no navegador ou digite a pergunta.',
+      'no-speech': 'Não ouvi nada. Toque no microfone e fale de novo.',
+      'network': 'O reconhecimento de voz deste navegador precisa de internet.',
+      'audio-capture': 'Nenhum microfone encontrado. Digite a pergunta.'
+    };
+    avisar(erros[e.error] || 'O microfone falhou. Digite a pergunta.');
+    ouvido = '';
+  };
+  rec.onend = () => {
+    if (ouvido.trim()) { $('entrada').value = ''; processar(ouvido); }
+    else if (estado === 'ouvindo') mudarEstado('idle');
+  };
+}
+
+$('btnMic').addEventListener('click', () => {
+  if (!rec) { avisar('Este navegador não reconhece voz. Use o Chrome ou digite a pergunta.'); return; }
+  if (estado === 'falando') { speechSynthesis.cancel(); mudarEstado('idle'); }
+  if (estado === 'ouvindo') { rec.stop(); return; }
+  try { rec.start(); } catch (e) { /* já estava ouvindo */ }
+});
+
+function enviarTexto() {
+  const t = $('entrada').value;
+  $('entrada').value = '';
+  processar(t);
+}
+$('btnEnviar').addEventListener('click', enviarTexto);
+$('entrada').addEventListener('keydown', (e) => { if (e.key === 'Enter') enviarTexto(); });
+
+/* ================= PWA: permite instalar e abrir offline ================= */
+if ('serviceWorker' in navigator) {
+  addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+}
+</script>
+</body>
+</html>
